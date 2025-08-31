@@ -1,117 +1,175 @@
-// External Lease Parser Service for Vercel/Netlify
-// This service handles PDF conversion and OpenAI processing
+// /api/parse-lease.js
+import formidable from 'formidable';
+import fs from 'fs';
+import fetch from 'node-fetch';
+
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
 
 export default async function handler(req, res) {
-  // CORS headers for Bubble
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const { pdfUrl, leaseUploadId } = req.body;
+    // Parse the uploaded file
+    const form = formidable({
+      maxFileSize: 50 * 1024 * 1024, // 50MB limit
+    });
 
-    if (!pdfUrl) {
-      return res.status(400).json({ error: 'PDF URL is required' });
+    const [fields, files] = await form.parse(req);
+    const uploadedFile = files.file?.[0];
+
+    if (!uploadedFile) {
+      return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    console.log('Processing lease document:', pdfUrl);
+    // Check if it's a PDF
+    if (!uploadedFile.mimetype?.includes('pdf')) {
+      return res.status(400).json({ error: 'Only PDF files are supported' });
+    }
 
-    // Step 1: Convert PDF to images using PDF.co
-    const imageUrls = await convertPdfToImages(pdfUrl);
-    console.log('PDF converted to', imageUrls.length, 'images');
+    // Step 1: Convert PDF to text using PDF.co
+    const pdfText = await convertPdfToText(uploadedFile);
+    
+    // Step 2: Parse lease data using OpenAI
+    const leaseData = await parseLeaseWithAI(pdfText);
 
-    // Step 2: Extract lease data using OpenAI Vision
-    const leaseData = await extractLeaseData(imageUrls);
-    console.log('Lease data extracted:', leaseData);
-
-    // Return structured response to Bubble
-    return res.status(200).json({
+    // Step 3: Return structured data
+    res.status(200).json({
       success: true,
-      leaseUploadId,
-      data: leaseData,
-      imageCount: imageUrls.length
+      filename: uploadedFile.originalFilename,
+      extractedText: pdfText.substring(0, 500) + '...', // First 500 chars for debugging
+      leaseData: leaseData
     });
 
   } catch (error) {
     console.error('Error processing lease:', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message,
-      leaseUploadId: req.body.leaseUploadId
+    res.status(500).json({ 
+      error: 'Failed to process lease',
+      details: error.message 
     });
   }
 }
 
-async function convertPdfToImages(pdfUrl) {
-  const response = await fetch('https://api.pdf.co/v1/pdf/convert/to/png', {
+async function convertPdfToText(file) {
+  const pdfCoApiKey = process.env.PDFCO_API_KEY;
+  
+  if (!pdfCoApiKey) {
+    throw new Error('PDF.co API key not configured');
+  }
+
+  // Read file as base64
+  const fileBuffer = fs.readFileSync(file.filepath);
+  const base64Data = fileBuffer.toString('base64');
+
+  // Convert PDF to text using PDF.co
+  const response = await fetch('https://api.pdf.co/v1/pdf/convert/to/text', {
     method: 'POST',
     headers: {
-      'x-api-key': process.env.PDFCO_API_KEY,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'x-api-key': pdfCoApiKey,
     },
     body: JSON.stringify({
-      url: pdfUrl,
-      pages: '',
-      name: 'lease_page'
-    })
+      file: `data:application/pdf;base64,${base64Data}`,
+      inline: true,
+    }),
   });
 
   const result = await response.json();
   
-  if (result.error) {
-    throw new Error(`PDF conversion failed: ${result.message}`);
+  if (!result.body) {
+    throw new Error(`PDF conversion failed: ${result.error || 'Unknown error'}`);
   }
 
-  return result.urls;
+  return result.body;
 }
 
-async function extractLeaseData(imageUrls) {
-  // Use first page for lease data extraction
-  const firstImageUrl = imageUrls[0];
+async function parseLeaseWithAI(text) {
+  const openaiApiKey = process.env.OPENAI_API_KEY;
+  
+  if (!openaiApiKey) {
+    throw new Error('OpenAI API key not configured');
+  }
+
+  const prompt = `
+Extract the following information from this commercial lease document. Return ONLY a valid JSON object with these exact fields that match the Bubble database schema:
+
+{
+  "annual_increase": 0,
+  "current_rent": 0,
+  "expense_reimb": "",
+  "free_rent_months": 0,
+  "lease_end": "",
+  "lease_start": "",
+  "leased_area": 0,
+  "measurement": "",
+  "renewal_option": "",
+  "renewal_option_terms": "",
+  "starting_rent": 0,
+  "suite": "",
+  "tenant_name": "",
+  "term_months": 0
+}
+
+Instructions:
+- annual_increase: Annual rent increase amount as number (no $ signs)
+- current_rent: Current monthly rent as number (no $ signs or commas)
+- expense_reimb: Type of expense reimbursement (e.g., "NNN", "Gross", "Modified Gross", etc.)
+- free_rent_months: Number of free rent months as number
+- lease_end: Lease end date in YYYY-MM-DD format
+- lease_start: Lease start date in YYYY-MM-DD format
+- leased_area: Square footage as number (no units)
+- measurement: Unit of measurement, usually "SF" or "RSF"
+- renewal_option: "yes" or "no" if renewal options exist
+- renewal_option_terms: Text description of renewal terms if any
+- starting_rent: Initial monthly rent amount as number (no $ signs)
+- suite: Suite number or unit identifier
+- tenant_name: Full legal name of the tenant
+- term_months: Lease term in months as number
+
+For fields you cannot find in the document, use empty string "" for text fields, 0 for numbers. For dates, use YYYY-MM-DD format.
+
+Lease document text:
+${text}`;
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${openaiApiKey}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4o',
-      messages: [{
-        role: 'user',
-        content: [{
-          type: 'text',
-          text: 'Extract lease data from this document and return ONLY a JSON object with these exact fields: tenant_name (string), leased_area (number), suite (string), lease_start (YYYY-MM-DD), lease_end (YYYY-MM-DD), term_months (number), starting_rent (number), current_rent (number), annual_increase (number as percentage), free_rent_months (number), expense_reimb (string), renewal_option (boolean), renewal_terms (string). Return only the JSON, no other text.'
-        }, {
-          type: 'image_url',
-          image_url: { url: firstImageUrl }
-        }]
-      }],
-      max_tokens: 500
-    })
+      model: 'gpt-4',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert at extracting structured data from commercial real estate lease documents. Always return valid JSON that matches the exact field names provided.'
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: 0,
+      max_tokens: 1000,
+    }),
   });
 
   const result = await response.json();
   
-  if (!result.choices || !result.choices[0]) {
-    throw new Error('Invalid OpenAI response');
+  if (!result.choices?.[0]?.message?.content) {
+    throw new Error('Failed to parse lease with AI');
   }
 
-  const content = result.choices[0].message.content;
-  
   try {
-    // Parse the JSON response from OpenAI
-    const leaseData = JSON.parse(content);
+    // Parse the JSON response
+    const leaseData = JSON.parse(result.choices[0].message.content);
     return leaseData;
-  } catch (e) {
-    throw new Error(`Failed to parse OpenAI response as JSON: ${content}`);
+  } catch (parseError) {
+    throw new Error('AI returned invalid JSON: ' + result.choices[0].message.content);
   }
 }
