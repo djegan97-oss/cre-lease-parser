@@ -1,0 +1,10 @@
+{
+  "name": "cre-lease-parser",
+  "version": "1.0.0",
+  "description": "Lease document parsing service",
+  "main": "api/parse-lease.js",
+  "dependencies": {},
+  "engines": {
+    "node": "18.x"
+  }
+}
