@@ -1,0 +1,101 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with PostGIS extension
+  db:
+    image: postgis/postgis:15-3.3
+    container_name: ios_db
+    environment:
+      POSTGRES_DB: ios_zoning
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/sql:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI backend
+  api:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.api
+    container_name: ios_api
+    working_dir: /workspace
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/ios_zoning
+      ZONEOMICS_API_KEY: ${ZONEOMICS_API_KEY:-}
+      MAPTILES_URL: http://localhost:8080
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/workspace
+      - /workspace/backend/__pycache__
+      - /workspace/frontend/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # React frontend
+  frontend:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.frontend
+    container_name: ios_frontend
+    working_dir: /app
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - VITE_TILES_URL=http://localhost:8080
+    command: npm run dev -- --host 0.0.0.0
+
+  # Tileserver GL for vector tiles
+  tileserver:
+    image: maptiler/tileserver-gl:latest
+    container_name: ios_tileserver
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./tiles:/data
+      - ./tileserver-config.json:/data/config.json:ro
+    command: --config /data/config.json
+
+  # One-shot ETL runner
+  etl:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.api
+    container_name: ios_etl
+    working_dir: /workspace
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/ios_zoning
+      ZONEOMICS_API_KEY: ${ZONEOMICS_API_KEY:-}
+    volumes:
+      - .:/workspace
+      - ./tiles:/workspace/tiles
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "
+        echo 'Running ETL pipeline...' &&
+        python backend/etl/ingest_zoneomics.py &&
+        python backend/etl/join_ownership.py &&
+        python backend/etl/build_tiles.py &&
+        echo 'ETL complete!'
+      "
+    profiles:
+      - etl
+
+volumes:
+  postgres_data:
