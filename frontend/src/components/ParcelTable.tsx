@@ -15,8 +15,9 @@ function ParcelTable({ parcels, selectedParcel, onSelectParcel, sortField, sortD
   const navigate = useNavigate()
 
   const handleRowClick = (parcel: Parcel, e: React.MouseEvent) => {
-    // Don't select if clicking the View button
-    if ((e.target as HTMLElement).classList.contains('view-details-btn')) {
+    // Don't select if clicking the View button or action column
+    const target = e.target as HTMLElement
+    if (target.closest('.view-details-btn') || target.closest('.action-cell')) {
       return
     }
     onSelectParcel(parcel)
@@ -24,6 +25,7 @@ function ParcelTable({ parcels, selectedParcel, onSelectParcel, sortField, sortD
 
   const handleViewDetails = (parcel: Parcel, e: React.MouseEvent) => {
     e.stopPropagation()
+    e.preventDefault()
     navigate(`/property/${parcel.id}`)
   }
 
@@ -88,7 +90,7 @@ function ParcelTable({ parcels, selectedParcel, onSelectParcel, sortField, sortD
                 <td>{parcel.zone_code || '—'}</td>
                 <td>{formatAcres(parcel.lot_size_sqft || parcel.area_sqft)}</td>
                 <td>{formatCurrency(parcel.total_value)}</td>
-                <td>
+                <td className="action-cell">
                   <button
                     className="view-details-btn"
                     onClick={(e) => handleViewDetails(parcel, e)}
