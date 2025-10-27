@@ -1,0 +1,19 @@
+.app-container {
+  display: grid;
+  grid-template-columns: 40% 60%;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.left-panel {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+
+.right-panel {
+  position: relative;
+  overflow: hidden;
+}
