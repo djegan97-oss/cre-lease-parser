@@ -13,6 +13,8 @@ interface MapProps {
 }
 
 function Map({ features, filteredParcels, selectedParcel, setSelectedParcel }: MapProps) {
+  console.log('🗺️ Map component rendering! Features count:', features.length)
+
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<maplibregl.Map | null>(null)
   const mapLoaded = useRef(false)
@@ -20,6 +22,7 @@ function Map({ features, filteredParcels, selectedParcel, setSelectedParcel }: M
 
   // Initialize map
   useEffect(() => {
+    console.log('🔧 Map initialization effect running')
     if (!mapContainer.current || map.current) return
 
     map.current = new maplibregl.Map({
@@ -49,6 +52,7 @@ function Map({ features, filteredParcels, selectedParcel, setSelectedParcel }: M
     })
 
     map.current.on('load', () => {
+      console.log('✅ Map loaded event fired!')
       mapLoaded.current = true
     })
 
