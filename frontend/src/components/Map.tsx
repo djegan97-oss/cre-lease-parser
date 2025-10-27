@@ -63,20 +63,27 @@ function Map({ features, filteredParcels, selectedParcel, setSelectedParcel }: M
 
   // Add parcel polygons layer
   useEffect(() => {
+    console.log('Polygon layer effect triggered. Map loaded:', mapLoaded.current, 'Features:', features.length)
     if (!map.current || !mapLoaded.current || features.length === 0) return
 
     const currentMap = map.current
 
     // Remove existing parcel layers if they exist
     if (currentMap.getLayer('parcels-fill')) {
+      console.log('Removing existing parcels-fill layer')
       currentMap.removeLayer('parcels-fill')
     }
     if (currentMap.getLayer('parcels-outline')) {
+      console.log('Removing existing parcels-outline layer')
       currentMap.removeLayer('parcels-outline')
     }
     if (currentMap.getSource('parcels')) {
+      console.log('Removing existing parcels source')
       currentMap.removeSource('parcels')
     }
+
+    console.log('Adding parcels source with', features.length, 'features')
+    console.log('First feature:', features[0])
 
     // Add parcel source
     currentMap.addSource('parcels', {
@@ -87,6 +94,7 @@ function Map({ features, filteredParcels, selectedParcel, setSelectedParcel }: M
       },
     })
 
+    console.log('Adding fill layer...')
     // Add fill layer
     currentMap.addLayer({
       id: 'parcels-fill',
@@ -99,36 +107,42 @@ function Map({ features, filteredParcels, selectedParcel, setSelectedParcel }: M
           '#3b82f6', // Blue for IOS eligible
           '#94a3b8', // Gray for others
         ],
-        'fill-opacity': 0.3,
+        'fill-opacity': 0.5,
       },
     })
 
+    console.log('Adding outline layer...')
     // Add outline layer
     currentMap.addLayer({
       id: 'parcels-outline',
       type: 'line',
       source: 'parcels',
       paint: {
-        'line-color': '#1e293b',
-        'line-width': 1,
-        'line-opacity': 0.5,
+        'line-color': '#000000',
+        'line-width': 2,
+        'line-opacity': 0.8,
       },
     })
+
+    console.log('Layers added successfully!')
 
     // Fit bounds to show all parcels
     if (features.length > 0) {
       const bounds = new maplibregl.LngLatBounds()
       features.forEach((feature) => {
         if (feature.geometry && feature.geometry.coordinates) {
-          const coords = feature.geometry.coordinates[0]
-          if (coords && coords.length > 0) {
-            coords.forEach((coord: number[]) => {
+          // MultiPolygon has coordinates[polygon][ring][coordinate]
+          const polygon = feature.geometry.coordinates[0] // First polygon
+          if (polygon && polygon[0]) {
+            const ring = polygon[0] // First ring (outer boundary)
+            ring.forEach((coord: number[]) => {
               bounds.extend([coord[0], coord[1]])
             })
           }
         }
       })
       currentMap.fitBounds(bounds, { padding: 50 })
+      console.log('Fitted bounds to parcels')
     }
   }, [features])
 
@@ -153,9 +167,11 @@ function Map({ features, filteredParcels, selectedParcel, setSelectedParcel }: M
       let centerLat = 0
       let count = 0
 
-      const coords = feature.geometry.coordinates[0]
-      if (coords && coords.length > 0) {
-        coords.forEach((coord: number[]) => {
+      // MultiPolygon has coordinates[polygon][ring][coordinate]
+      const polygon = feature.geometry.coordinates[0] // First polygon
+      if (polygon && polygon[0]) {
+        const ring = polygon[0] // First ring (outer boundary)
+        ring.forEach((coord: number[]) => {
           centerLng += coord[0]
           centerLat += coord[1]
           count++
@@ -230,9 +246,11 @@ function Map({ features, filteredParcels, selectedParcel, setSelectedParcel }: M
     let centerLat = 0
     let count = 0
 
-    const coords = feature.geometry.coordinates[0]
-    if (coords && coords.length > 0) {
-      coords.forEach((coord: number[]) => {
+    // MultiPolygon has coordinates[polygon][ring][coordinate]
+    const polygon = feature.geometry.coordinates[0] // First polygon
+    if (polygon && polygon[0]) {
+      const ring = polygon[0] // First ring (outer boundary)
+      ring.forEach((coord: number[]) => {
         centerLng += coord[0]
         centerLat += coord[1]
         count++
