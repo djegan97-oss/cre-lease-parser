@@ -28,6 +28,7 @@ class Parcel(Base):
     improvement_value = Column(Numeric(15, 2))
     total_value = Column(Numeric(15, 2))
     year_built = Column(Integer)
+    market = Column(String(255))
 
     # Ownership
     owner_name = Column(String(500))

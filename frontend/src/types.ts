@@ -11,6 +11,7 @@ export interface Parcel {
   total_value?: number
   year_built?: number
   score?: number
+  market?: string
 }
 
 export interface ParcelDetail extends Parcel {

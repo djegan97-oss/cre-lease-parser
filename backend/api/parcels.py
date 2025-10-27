@@ -57,11 +57,15 @@ async def get_parcels_geojson(
         Parcel.ios_eligible,
         Parcel.total_value,
         Parcel.year_built,
+        Parcel.market,
         ST_AsGeoJSON(Parcel.geom).label('geojson')
     )
 
     if ios_only:
         query = query.filter(Parcel.ios_eligible == True)
+
+    if market:
+        query = query.filter(Parcel.market == market)
 
     query = query.limit(limit)
     results = query.all()
@@ -86,6 +90,7 @@ async def get_parcels_geojson(
                 "ios_flag": row.ios_eligible,
                 "total_value": float(row.total_value) if row.total_value else None,
                 "year_built": row.year_built,
+                "market": row.market,
             }
         }
         features.append(feature)
