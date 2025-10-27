@@ -7,11 +7,17 @@ import './App.css'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
+type SortField = 'address' | 'score' | 'zone_code' | 'lot_size_sqft'
+type SortDirection = 'asc' | 'desc'
+
 function App() {
   const [parcelList, setParcelList] = useState<Parcel[]>([])
   const [filteredParcels, setFilteredParcels] = useState<Parcel[]>([])
+  const [sortedParcels, setSortedParcels] = useState<Parcel[]>([])
   const [selectedParcel, setSelectedParcel] = useState<Parcel | null>(null)
   const [geoJsonFeatures, setGeoJsonFeatures] = useState<any[]>([])
+  const [sortField, setSortField] = useState<SortField>('score')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({
     address: '',
     ownerName: '',
@@ -30,6 +36,25 @@ function App() {
   useEffect(() => {
     fetchParcels()
   }, [])
+
+  // Sort parcels whenever filteredParcels or sort criteria change
+  useEffect(() => {
+    const sorted = [...filteredParcels].sort((a, b) => {
+      let aVal: any = a[sortField]
+      let bVal: any = b[sortField]
+
+      if (aVal === undefined || aVal === null) aVal = ''
+      if (bVal === undefined || bVal === null) bVal = ''
+
+      if (typeof aVal === 'string') aVal = aVal.toLowerCase()
+      if (typeof bVal === 'string') bVal = bVal.toLowerCase()
+
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
+      return 0
+    })
+    setSortedParcels(sorted)
+  }, [filteredParcels, sortField, sortDirection])
 
   const fetchParcels = async () => {
     try {
@@ -132,20 +157,32 @@ function App() {
     setFilteredParcels(parcelList)
   }
 
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortField(field)
+      setSortDirection('desc')
+    }
+  }
+
   return (
     <div className="app-container">
       <div className="left-panel">
         <Controls filters={searchFilters} onSearch={handleSearch} onClear={handleClear} />
         <ParcelTable
-          parcels={filteredParcels}
+          parcels={sortedParcels}
           selectedParcel={selectedParcel}
           onSelectParcel={setSelectedParcel}
+          sortField={sortField}
+          sortDirection={sortDirection}
+          onSort={handleSort}
         />
       </div>
       <div className="right-panel">
         <Map
           features={geoJsonFeatures}
-          filteredParcels={filteredParcels}
+          filteredParcels={sortedParcels}
           selectedParcel={selectedParcel}
           setSelectedParcel={setSelectedParcel}
         />
